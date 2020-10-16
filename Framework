@@ -1,0 +1,232 @@
+%Matlab code for simulation of different protocols for mobile ad-hoc networks with mobile nodes and sink
+%David Budwilowitz
+
+%Simulatie van een DDR protocol
+clc;close all; clear;
+
+
+%Vaststellen parameters
+P = 30; %totaal aantal nodes
+N = 10; %Aantal stappen in de simulatie
+X_grens = 50; %grenzen van het gebied x-as
+Y_grens = 50; %grenzen van het gebied y-as
+R = 15 ;%bereik van een node
+Battery_max = 100; %maximum inhoud batterij
+
+
+
+%Maak de nodes aan. In de begin situatie zijn alle nodes uniform
+
+Totaal_nodes = Maak_nodes(P, X_grens, Y_grens,Battery_max);
+Totale_energie = [ sum(Totaal_nodes(4,:))]
+%Genereren Sink
+%Parameters:
+% 1 ID
+% 2 X-coordinaat
+% 3 Y-coordinaat
+% 4 Available. 0: not available, 1: available
+% 5 visited
+sink = [0;X_grens*rand();Y_grens*rand();0];
+
+%Maak een graph met deze informatie
+Init = Maak_digraph(Totaal_nodes);
+Init2 = Maak_graph (Totaal_nodes);
+
+
+%%
+%plotten initiële situatie
+
+%Leg coördinaten vast
+X_co = Totaal_nodes(2,:);
+Y_co = Totaal_nodes(3,:);
+X_co(P+1) = sink(2);
+Y_co(P+1) = sink(3);
+%Maak de sink een x ipv o
+Markeer = string([1:P+1]);
+Markeer(1:P) = 'o';
+Markeer (P+1) = 'x';
+%Maak de plot
+figure('Name', 'Initial situation'); 
+title('Initial situation for Ad-hoc network simulation')
+Visueel = plot(Init) ;
+Visueel.XData = X_co;
+Visueel.YData = Y_co;
+Visueel.Marker= Markeer;
+title('Initial situation for Ad-hoc network analisis')
+
+
+%%
+%uitvoeren van de stappen van de simulatie voor flooding vanuit sink
+
+sink(5) = 1;
+beschikbaar1 = Check_available_flood (sink, Totaal_nodes, R);
+    Way = Init;
+for i = beschikbaar1
+    Way = addedge(Way, 'Sink' , string(i),1);
+    Totaal_nodes(6,i) = 1;
+end
+
+
+Stap2=[];
+while sum(Totaal_nodes(6,:)) < P
+     for source = beschikbaar1
+
+        source_check = Check_available_flood (Totaal_nodes(:,source), Totaal_nodes, R);
+        Totaal_nodes(:,source) = Send_small(Totaal_nodes(:,source));
+        for j = source_check
+            Totaal_nodes(6,j) = 1;
+            van = string(source);
+            naar = string(j);
+            Way = addedge(Way, van , naar,1);
+        end
+        Stap2 = [Stap2 source_check];
+
+     end
+     
+     if isempty(Stap2)
+         break
+     end
+     beschikbaar1 = [];
+     for source = Stap2
+        test = source;
+        source_check = Check_available_flood (Totaal_nodes(:,source), Totaal_nodes, R);
+        Totaal_nodes(:,source) = Send_small(Totaal_nodes(:,source));
+        for j = source_check
+            Totaal_nodes(6,j) = 1;
+            van = string(source);
+            naar = string(j);
+            Way = addedge(Way, van , naar,1);
+        end
+        beschikbaar1 = [beschikbaar1 source_check];
+
+     end
+     
+     if isempty(beschikbaar1)
+         break
+     end
+     Stap2=[];
+end   
+
+bereik = sum(Totaal_nodes(6,:))
+Totale_energie(2) = sum(Totaal_nodes(4,:))
+
+%Maak de plot
+figure('Name', 'flood'); 
+title('Informatie verspreiding locatie sink dmv flooding')
+Visueel2 = plot(Way) ;
+Visueel2.XData = X_co;
+Visueel2.YData = Y_co;
+title('Flooding algoritme')
+
+
+
+
+%%
+%Move nodes
+Totaal_nodes = Move_nodes(Totaal_nodes,X_grens, Y_grens);
+
+%Leg coördinaten vast
+X_co = Totaal_nodes(2,:);
+Y_co = Totaal_nodes(3,:);
+X_co(P+1) = sink(2);
+Y_co(P+1) = sink(3);
+
+figure('Name', 'Moved situation'); 
+title('Moved situation for Ad-hoc network simulation')
+Visueel3 = plot(Init) ;
+Visueel3.XData = X_co;
+Visueel3.YData = Y_co;
+Visueel3.Marker= Markeer;
+title('Moved situation for Ad-hoc network analisis')
+
+
+%%
+%Functions
+
+function Nodes_totaal = Maak_nodes(P, X_grens, Y_grens,Max_batterij)
+%Parameters:
+% 1 ID
+% 2 X-coordinaat
+% 3 Y-coordinaat
+% 4 Baterij niveau
+% 5 Available. 0: not available, 1: available
+% 6 visited. 0:not visited , 1: visited
+% 7 
+   
+Nodes_totaal = zeros(6,P);  %een lege array waar per node (kolom) informatie komt te staan (rijen)
+
+    for i = 1:P
+    Nodes_totaal(1,i) = i;
+    Nodes_totaal(2,i) = X_grens*rand();
+    Nodes_totaal(3,i) = Y_grens*rand();
+    Nodes_totaal(4,i) = Max_batterij;
+    
+    end
+end
+
+function Init = Maak_graph (Totaal_nodes)
+    
+    %Maak nodes voor graph
+    ID = transpose(string(Totaal_nodes(1,:)));
+    %Batterij = transpose(Totaal_nodes(4,:));
+    %Maak sink voor graph
+    ID(length(Totaal_nodes)+1) = 'Sink';
+    %Batterij(length(Totaal_nodes)+1) = 101;
+    %Node_table = table(ID, Batterij );
+    Init = graph(zeros(length(Totaal_nodes)+1),ID) ;
+end
+
+function Init = Maak_digraph (Totaal_nodes)
+    
+    %Maak nodes voor graph
+    ID = transpose(string(Totaal_nodes(1,:)));
+    %Batterij = transpose(Totaal_nodes(4,:));
+    %Maak sink voor graph
+    ID(length(Totaal_nodes)+1) = 'Sink';
+    %Batterij(length(Totaal_nodes)+1) = 101;
+    %Node_table = table(ID, Batterij );
+    Init = digraph(zeros(length(Totaal_nodes)+1),ID) ;
+end
+
+function available = Check_available_flood (Source, Totaal_nodes, R)
+    available = [];
+    source_X = Source(2);
+    source_Y = Source(3);
+    counter = 1;
+    for i = 1 : length(Totaal_nodes)
+        Distance = sqrt((source_X - Totaal_nodes(2,i))^2 + (source_Y - Totaal_nodes(3,i))^2);
+        if (Distance <= R ) && (Totaal_nodes(6,i) == 0) && (Source(1) ~= Totaal_nodes(1,i))
+           available(counter) = i;
+           counter = counter + 1;
+           
+           
+           
+        end
+        
+    end
+end
+
+function Moved_Nodes = Move_nodes (Totaal_nodes, X_grens, Y_grens)
+
+    for i = 1: length(Totaal_nodes)
+        Totaal_nodes(2,i) = Totaal_nodes(2,i) + (-0.02*X_grens + 0.04 * X_grens * rand());
+        while (Totaal_nodes(2,i) > X_grens) || (Totaal_nodes(2,i) < 0)
+            Totaal_nodes(2,i) = Totaal_nodes(2,i) + (-0.02*X_grens + 0.04 * X_grens * rand());
+        end
+
+        Totaal_nodes(3,i) = Totaal_nodes(3,i) + (-0.02*Y_grens + 0.04 * Y_grens * rand());
+        while (Totaal_nodes(3,i) > Y_grens) || (Totaal_nodes(3,i) < 0)
+            Totaal_nodes(3,i) = Totaal_nodes(3,i) + (-0.02*Y_grens + 0.04 * Y_grens * rand());
+        end   
+    end
+    
+    Moved_Nodes = Totaal_nodes;
+end
+
+function Send_Node = Send_small( Node)
+    Needed_energy = 1;
+    Node(4) = Node(4) - Needed_energy;
+    Send_Node = Node;
+
+
+end
