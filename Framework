@@ -124,7 +124,7 @@ title('Flooding algoritme')
 %%
 %Move nodes
 Totaal_nodes = Move_nodes(Totaal_nodes,X_grens, Y_grens);
-
+sink = Move_sink(sink, X_grens, Y_grens);
 %Leg coördinaten vast
 X_co = Totaal_nodes(2,:);
 Y_co = Totaal_nodes(3,:);
@@ -229,4 +229,19 @@ function Send_Node = Send_small( Node)
     Send_Node = Node;
 
 
+end
+
+
+function Moved_Sink = Move_sink (sink, X_grens, Y_grens)
+    sink(2) = sink(2) + (-0.02*X_grens + 0.04 * X_grens * rand());
+        while (sink(2) > X_grens) || (sink(2) < 0)
+           sink(2) = sink(2) + (-0.02*X_grens + 0.04 * X_grens * rand());
+        end
+
+    sink(3) = sink(3) + (-0.02*Y_grens + 0.04 * Y_grens * rand());
+        while (sink(3) > Y_grens) || (sink(3) < 0)
+            sink(3) = sink(3) + (-0.02*Y_grens + 0.04 * Y_grens * rand());
+        end   
+
+    Moved_Sink = sink;
 end
