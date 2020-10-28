@@ -7,9 +7,9 @@ clc;close all; clear;
 %Vaststellen parameters
 P = 30; %totaal aantal nodes
 N = 10; %Aantal stappen in de simulatie
-X_grens = 50; %grenzen van het gebied x-as
-Y_grens = 50; %grenzen van het gebied y-as
-R = 15 ;%bereik van een node
+X_grens = 1000; %grenzen van het gebied x-as
+Y_grens = 1000; %grenzen van het gebied y-as
+R = 200;%bereik van een node
 Battery_max = 100; %maximum inhoud batterij
 alfa = 60;
 
@@ -18,7 +18,7 @@ alfa = 60;
 %Maak de nodes aan. In de begin situatie zijn alle nodes uniform
 
 Totaal_nodes = Maak_nodes(P, X_grens, Y_grens,Battery_max);
-Totale_energie = [ sum(Totaal_nodes(4,:))]
+Totale_energie = [ sum(Totaal_nodes(4,:))];
 %Genereren Sink
 %Parameters:
 % 1 ID
@@ -72,7 +72,7 @@ while sum(Totaal_nodes(6,:)) < P
      for source = beschikbaar1
 
         source_check = Check_available_flood (Totaal_nodes(:,source), Totaal_nodes, R);
-        Totaal_nodes(:,source) = Send_small(Totaal_nodes(:,source));
+        Totaal_nodes(:,source) = Send_Location(Totaal_nodes(:,source));
         for j = source_check
             Totaal_nodes(6,j) = 1;
             van = string(source);
@@ -90,7 +90,7 @@ while sum(Totaal_nodes(6,:)) < P
      for source = Stap2
         test = source;
         source_check = Check_available_flood (Totaal_nodes(:,source), Totaal_nodes, R);
-        Totaal_nodes(:,source) = Send_small(Totaal_nodes(:,source));
+        Totaal_nodes(:,source) = Send_Location(Totaal_nodes(:,source));
         for j = source_check
             Totaal_nodes(6,j) = 1;
             van = string(source);
@@ -107,8 +107,8 @@ while sum(Totaal_nodes(6,:)) < P
      Stap2=[];
 end   
 
-bereik = sum(Totaal_nodes(6,:))
-Totale_energie(2) = sum(Totaal_nodes(4,:))
+bereikflooding = sum(Totaal_nodes(6,:))
+Totale_energie(2) = sum(Totaal_nodes(4,:));
 
 %Maak de plot
 figure('Name', 'flood'); 
@@ -119,24 +119,40 @@ Visueel2.YData = Y_co;
 title('Flooding algoritme')
 
 %%
-%Uitvoeren simulatie van node naar sink
+%Uitvoeren simulatie van node naar sink voor Dynamic Directional Routing
+%protocol
+
+%Make digraph
 DDRstap1 = Init;
+
+%Loop all nodes
 for i = 1 : P
+    Totaal_nodes(5,:) = 0;
     sink(5) = 0;
     alfa = 60;
     van = i;
+    Totaal_nodes(5,i)=1;
+    %Find path from start node to sink
     while sink(5) == 0
-        naar = Check_available_ddr (Totaal_nodes(:,van),sink, Totaal_nodes, R, alfa);
+        [Totaal_nodes, naar] = Check_available_ddr (Totaal_nodes(:,van),sink, Totaal_nodes, R, alfa);
+        Totaal_nodes(:,van) = Send_Location(Totaal_nodes(:,van));
+        Totaal_nodes(:,van) = Send_Data(Totaal_nodes(:,van));
         DDRstap1 = addedge(DDRstap1, string(van) , string(naar),1);
+        
+        %If sink is found, end path
         if  string(naar) == 'Sink'
             sink(5) = 1; 
             Totaal_nodes(7,i) = 1;
+        %If no node in range, stop looking
         elseif (isempty(naar)) && (alfa == 360)
             break
+        %If no node in cone, enlarge cone
         elseif isempty(naar)
-            alfa = alfa + 30;
             
+            alfa = alfa + 30;
+        %Update point of path    
         else
+            Totaal_nodes(5,naar)=1;
             van = naar;
         end
         
@@ -154,8 +170,8 @@ Visueel3.XData = X_co;
 Visueel3.YData = Y_co;
 Visueel3.Marker= Markeer;
 title('DDR protocol')
-
-
+BereikDDR = sum(Totaal_nodes(7,:))
+Totale_energie(3) = sum(Totaal_nodes(4,:))
 %%
 %Move nodes
 Totaal_nodes = Move_nodes(Totaal_nodes,X_grens, Y_grens);
@@ -176,7 +192,7 @@ Visueel3.Marker= Markeer;
 title('Moved situation for Ad-hoc network analisis')
 %%
 
-
+%a = Check_available_ddr (Totaal_nodes(:,9),sink, Totaal_nodes, R, alfa);
 
 
 %%
@@ -276,15 +292,29 @@ function Moved_Sink = Move_sink (sink, X_grens, Y_grens)
     Moved_Sink = sink;
 end
 
-function Send_Node = Send_small( Node)
-    Needed_energy = 1;
+function Send_Node = Send_Location( Node)
+    Needed_energy = 10/(13*10.^1);
     Node(4) = Node(4) - Needed_energy;
     Send_Node = Node;
 
+end
+
+function Send_Node = Send_Hello( Node)
+    Needed_energy = 1/(13*10.^1);
+    Node(4) = Node(4) - Needed_energy;
+    Send_Node = Node;
 
 end
 
-function Best = Check_available_ddr (Source,Sink, Totaal_nodes, R, alfa)
+function Send_Node = Send_Data( Node)
+    Needed_energy = 60/(13*10.^1);
+    Node(4) = Node(4) - Needed_energy;
+    Send_Node = Node;
+
+end
+
+function [Updated_nodes, Best] = Check_available_ddr (Source,Sink, Totaal_nodes, R, alfa)
+    
     available = [];
     DTS = [] ;%DTS: Distance to Sink
     source_X = Source(2);
@@ -292,22 +322,49 @@ function Best = Check_available_ddr (Source,Sink, Totaal_nodes, R, alfa)
     sink_X = Sink(2);
     sink_Y = Sink(3);
     ATS = Find_angle(source_X, source_Y, sink_X, sink_Y); %ATS: Angle To Sink
-
+    RE_avg = sum(Totaal_nodes(4,:))/length(Totaal_nodes);
     
     counter = 1;
     for i = 1 : length(Totaal_nodes)
         Distance = sqrt((source_X - Totaal_nodes(2,i))^2 + (source_Y - Totaal_nodes(3,i))^2);
         ATN = Find_angle(source_X, source_Y, Totaal_nodes(2,i), Totaal_nodes(3,i));
-        if (Distance <= R )  && (Source(1) ~= Totaal_nodes(1,i)) && (ATN< ATS + 0.5 * alfa ) && (ATN > ATS - 0.5* alfa)
+        if (Distance <= R )  && (Totaal_nodes(5,i) == 0)&&(Source(1) ~= Totaal_nodes(1,i)) && (ATN< ATS + 0.5 * alfa ) && (ATN > ATS - 0.5* alfa) && (Totaal_nodes(4,i) >= 0.75*RE_avg)
            available(counter) = i;
+           
            DTS(counter) = sqrt((sink_X - Totaal_nodes(2,i))^2 + (sink_Y - Totaal_nodes(3,i))^2);
+           Totaal_nodes(:,i) = Send_Hello(Totaal_nodes(:,i));
+           RE_avg= RE_avg + Totaal_nodes(4,i);
            counter = counter + 1;                              
         end        
     end
-    Best = available(DTS == min(DTS));
-    if sqrt((source_X - sink_X)^2 + (source_Y - sink_Y)^2) <= R
-        Best = 'Sink'; 
+    
+    if isempty(available)
+       for i = 1 : length(Totaal_nodes)
+        Distance = sqrt((source_X - Totaal_nodes(2,i))^2 + (source_Y - Totaal_nodes(3,i))^2);
+        ATN = Find_angle(source_X, source_Y, Totaal_nodes(2,i), Totaal_nodes(3,i));
+            if (Distance <= R )  && (Totaal_nodes(5,i) == 0)&&(Source(1) ~= Totaal_nodes(1,i)) && (ATN< ATS + 0.5 * alfa ) && (ATN > ATS - 0.5* alfa) 
+               available(counter) = i;
+
+               DTS(counter) = sqrt((sink_X - Totaal_nodes(2,i))^2 + (sink_Y - Totaal_nodes(3,i))^2);
+               Totaal_nodes(:,i) = Send_Hello(Totaal_nodes(:,i));
+               RE_avg= RE_avg + Totaal_nodes(4,i);
+               counter = counter + 1;                              
+            end        
+        end 
     end
+    Updated_nodes= Totaal_nodes;
+   
+    if sqrt((source_X - sink_X)^2 + (source_Y - sink_Y)^2) <= R
+        Best= 'Sink'; 
+        return
+    end
+   
+    Best= available(DTS == min(DTS));
+        
+   
+    
+    
+    
     
 end
 
