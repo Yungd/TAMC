@@ -4,15 +4,22 @@
 clc;close all; clear;
 
 
+
+clc;clear
+
+
+
 %Vaststellen parameters
-P = 30; %totaal aantal nodes
-N = 10; %Aantal stappen in de simulatie
+P = 150; %totaal aantal nodes
+N = 20000; %Aantal stappen in de simulatie
 X_grens = 1000; %grenzen van het gebied x-as
 Y_grens = 1000; %grenzen van het gebied y-as
 R = 200;%bereik van een node
 Battery_max = 100; %maximum inhoud batterij
 alfa = 60;
 
+
+%rng(1904)
 
 
 %Maak de nodes aan. In de begin situatie zijn alle nodes uniform
@@ -28,177 +35,186 @@ Totale_energie = [ sum(Totaal_nodes(4,:))];
 % 5 visited
 sink = [0;X_grens*rand();Y_grens*rand();0];
 
-%Maak een graph met deze informatie
-Init = Maak_digraph(Totaal_nodes);
-Init2 = Maak_graph (Totaal_nodes);
+%Wat wordt er gemeten?
+
+%     \item Hoeveel energie is er over per ronde.
+Energie_rest = zeros(1,N);
+%     \item Hoeveel van de nodes doen het nog (Hebben nog genoeg energie om te zenden).
+Nodes_alive= zeros(1,N);
+%     \item Hoeveel packets gaan er verloren.
+Packets_arrived = zeros(1,N);
+%     \item Maximaal aantal rondes tot systeem overlijd.
+Max_rounds = N;
+%     \item Hoeveel energie wordt er per ronde gebruikt.
+Energie_used = zeros(1,N);
 
 
-%%
-%plotten initiële situatie
 
-%Leg coördinaten vast
-X_co = Totaal_nodes(2,:);
-Y_co = Totaal_nodes(3,:);
-X_co(P+1) = sink(2);
-Y_co(P+1) = sink(3);
-%Maak de sink een x ipv o
-Markeer = string([1:P+1]);
-Markeer(1:P) = 'o';
-Markeer (P+1) = 'x';
-%Maak de plot
-figure('Name', 'Initial situation'); 
-title('Initial situation for Ad-hoc network simulation')
-Visueel = plot(Init) ;
-Visueel.XData = X_co;
-Visueel.YData = Y_co;
-Visueel.Marker= Markeer;
-title('Initial situation for Ad-hoc network analisis')
+for Ronde = 1:N
+
+    %%
+    %uitvoeren van de stappen van de simulatie voor flooding vanuit sink
+if (Ronde == 1) || (0 == mod(Ronde,5))
+    sink(5) = 1;
+    beschikbaar1 = Check_available_flood (sink, Totaal_nodes, R);
 
 
-%%
-%uitvoeren van de stappen van de simulatie voor flooding vanuit sink
+    Stap2=[];
+    while sum(Totaal_nodes(6,:)) < P
+         for source = beschikbaar1
 
-sink(5) = 1;
-beschikbaar1 = Check_available_flood (sink, Totaal_nodes, R);
-    Way = Init;
-for i = beschikbaar1
-    Way = addedge(Way, 'Sink' , string(i),1);
-    Totaal_nodes(6,i) = 1;
-end
+            source_check = Check_available_flood (Totaal_nodes(:,source), Totaal_nodes, R);
+            Totaal_nodes(:,source) = Send_Location(Totaal_nodes(:,source));
+            for j = source_check
+                Totaal_nodes(6,j) = 1;
+                van = string(source);
+                naar = string(j);
 
+            end
+            Stap2 = [Stap2 source_check];
 
-Stap2=[];
-while sum(Totaal_nodes(6,:)) < P
-     for source = beschikbaar1
+         end
 
-        source_check = Check_available_flood (Totaal_nodes(:,source), Totaal_nodes, R);
-        Totaal_nodes(:,source) = Send_Location(Totaal_nodes(:,source));
-        for j = source_check
-            Totaal_nodes(6,j) = 1;
-            van = string(source);
-            naar = string(j);
-            Way = addedge(Way, van , naar,1);
-        end
-        Stap2 = [Stap2 source_check];
-
-     end
-     
-     if isempty(Stap2)
-         break
-     end
-     beschikbaar1 = [];
-     for source = Stap2
-        test = source;
-        source_check = Check_available_flood (Totaal_nodes(:,source), Totaal_nodes, R);
-        Totaal_nodes(:,source) = Send_Location(Totaal_nodes(:,source));
-        for j = source_check
-            Totaal_nodes(6,j) = 1;
-            van = string(source);
-            naar = string(j);
-            Way = addedge(Way, van , naar,1);
-        end
-        beschikbaar1 = [beschikbaar1 source_check];
-
-     end
-     
-     if isempty(beschikbaar1)
-         break
-     end
-     Stap2=[];
-end   
-
-bereikflooding = sum(Totaal_nodes(6,:))
-Totale_energie(2) = sum(Totaal_nodes(4,:));
-
-%Maak de plot
-figure('Name', 'flood'); 
-title('Informatie verspreiding locatie sink dmv flooding')
-Visueel2 = plot(Way) ;
-Visueel2.XData = X_co;
-Visueel2.YData = Y_co;
-title('Flooding algoritme')
-
-%%
-%Uitvoeren simulatie van node naar sink voor Dynamic Directional Routing
-%protocol
-
-%Make digraph
-DDRstap1 = Init;
-
-%Loop all nodes
-for i = 1 : P
-    Totaal_nodes(5,:) = 0;
-    sink(5) = 0;
-    alfa = 60;
-    van = i;
-    Totaal_nodes(5,i)=1;
-    %Find path from start node to sink
-    while sink(5) == 0
-        [Totaal_nodes, naar] = Check_available_ddr (Totaal_nodes(:,van),sink, Totaal_nodes, R, alfa);
-        Totaal_nodes(:,van) = Send_Location(Totaal_nodes(:,van));
-        Totaal_nodes(:,van) = Send_Data(Totaal_nodes(:,van));
-        DDRstap1 = addedge(DDRstap1, string(van) , string(naar),1);
-        
-        %If sink is found, end path
-        if  string(naar) == 'Sink'
-            sink(5) = 1; 
-            Totaal_nodes(7,i) = 1;
-        %If no node in range, stop looking
-        elseif (isempty(naar)) && (alfa == 360)
-            break
-        %If no node in cone, enlarge cone
-        elseif isempty(naar)
+         if isempty(Stap2)
+             break
+         end
+         beschikbaar1 = [];
+         for source = Stap2
             
-            alfa = alfa + 30;
-        %Update point of path    
-        else
-            Totaal_nodes(5,naar)=1;
-            van = naar;
+            source_check = Check_available_flood (Totaal_nodes(:,source), Totaal_nodes, R);
+            Totaal_nodes(:,source) = Send_Location(Totaal_nodes(:,source));
+            for j = source_check
+                Totaal_nodes(6,j) = 1;
+                van = string(source);
+                naar = string(j);
+
+            end
+            beschikbaar1 = [beschikbaar1 source_check];
+
+         end
+
+         if isempty(beschikbaar1)
+             break
+         end
+         Stap2=[];
+    end   
+
+    bereikflooding = sum(Totaal_nodes(6,:));
+    Totale_energie(2) = sum(Totaal_nodes(4,:));
+end
+
+    %%
+    %Uitvoeren simulatie van node naar sink voor Dynamic Directional Routing
+    %protocol
+
+
+    %Loop all nodes
+    for i = 1 : P
+        Totaal_nodes(5,:) = 0;
+        sink(5) = 0;
+        alfa = 60;
+        van = i;
+        Totaal_nodes(5,i)=1;
+        %Find path from start node to sink
+        while sink(5) == 0
+            [Totaal_nodes, naar] = Check_available_ddr (Totaal_nodes(:,van),sink, Totaal_nodes, R, alfa);
+            Totaal_nodes(:,van) = Send_Location(Totaal_nodes(:,van));
+            Totaal_nodes(:,van) = Send_Data(Totaal_nodes(:,van));
+
+
+            %If sink is found, end path
+            if  string(naar) == 'Sink'
+                sink(5) = 1; 
+                Totaal_nodes(7,i) = 1;
+            %If no node in range, stop looking
+            elseif (isempty(naar)) && (alfa == 360)
+                break
+            %If no node in cone, enlarge cone
+            elseif isempty(naar)
+
+                alfa = alfa + 30;
+            %Update point of path    
+            else
+                Totaal_nodes(5,naar)=1;
+                van = naar;
+            end
+
+
         end
-        
-        
+
+
+
     end
-     
+
+    BereikDDR = sum(Totaal_nodes(7,:));
+    Totale_energie(3) = sum(Totaal_nodes(4,:));
+    %%
+    %Move nodes
+    Totaal_nodes = Move_nodes(Totaal_nodes,X_grens, Y_grens);
+    sink = Move_sink(sink, X_grens, Y_grens);
+
     
+    
+    %%
+    %Noteer de te meten waardes
+    Energie_rest(Ronde) = sum(Totaal_nodes(4,:));
+    Nodes_alive(Ronde) = sum(Totaal_nodes(4,:) > (71/(13*10.^3)));
+    Packets_arrived(Ronde) = sum(Totaal_nodes(7,:));
+    if Ronde == 1
+        Energie_used(Ronde) = (P*Battery_max) - Energie_rest(Ronde);
+    else
+        Energie_used(Ronde) = Energie_rest(Ronde-1) - Energie_rest(Ronde);
+    end
+    
+    Totaal_nodes(5:7,:) = 0;
+    if Ronde > 12
+        if sum(Packets_arrived((Ronde-11):Ronde)) < 4*P
+            Max_rounds=Ronde;
+            break
+        end
+    end
+   
     
 end
-%Maak de plot
-figure('Name', 'DDR'); 
-title('Informatie verspreiding vanaf nodes naar sink')
-Visueel3 = plot(DDRstap1) ;
-Visueel3.XData = X_co;
-Visueel3.YData = Y_co;
-Visueel3.Marker= Markeer;
-title('DDR protocol')
-BereikDDR = sum(Totaal_nodes(7,:))
-Totale_energie(3) = sum(Totaal_nodes(4,:))
+
 %%
-%Move nodes
-Totaal_nodes = Move_nodes(Totaal_nodes,X_grens, Y_grens);
-sink = Move_sink(sink, X_grens, Y_grens);
+% Energie_rest
+% Nodes_alive
+% Packets_arrived
+% Energie_used
 
-%Leg coördinaten vast
-X_co = Totaal_nodes(2,:);
-Y_co = Totaal_nodes(3,:);
-X_co(P+1) = sink(2);
-Y_co(P+1) = sink(3);
+X_as = 1:Max_rounds;
 
-figure('Name', 'Moved situation'); 
-title('Moved situation for Ad-hoc network simulation')
-Visueel3 = plot(Init) ;
-Visueel3.XData = X_co;
-Visueel3.YData = Y_co;
-Visueel3.Marker= Markeer;
-title('Moved situation for Ad-hoc network analisis')
-%%
+figure ('Name', 'Rest energie systeem')
+title('Energie rest')
+plot(X_as,Energie_rest(1:Max_rounds))
+xlabel('Rondes')
+ylabel('Rest energie systeem')
 
-%a = Check_available_ddr (Totaal_nodes(:,9),sink, Totaal_nodes, R, alfa);
+figure ('Name', 'Nodes alive')
+title('Levende nodes')
+plot(X_as,Nodes_alive(1:Max_rounds))
+xlabel('Rondes')
+ylabel('Levende nodes')
+
+figure ('Name', 'Packets arrived')
+title('Aangekomen packets')
+plot(X_as,Packets_arrived(1:Max_rounds))
+xlabel('Rondes')
+ylabel('Ontvangen packets')
+
+figure ('Name', 'Gebruikte energie')
+title('Gebruikte energie per ronde')
+plot(X_as,Packets_arrived(1:Max_rounds))
+xlabel('Rondes')
+ylabel('gebruikte energie')
 
 
 %%
 %Functions
 
 function Nodes_totaal = Maak_nodes(P, X_grens, Y_grens,Max_batterij)
+%rng(1904)
 %Parameters:
 % 1 ID
 % 2 X-coordinaat
@@ -250,7 +266,7 @@ function available = Check_available_flood (Source, Totaal_nodes, R)
     counter = 1;
     for i = 1 : length(Totaal_nodes)
         Distance = sqrt((source_X - Totaal_nodes(2,i))^2 + (source_Y - Totaal_nodes(3,i))^2);
-        if (Distance <= R ) && (Totaal_nodes(6,i) == 0) && (Source(1) ~= Totaal_nodes(1,i))
+        if (Distance <= R ) && (Totaal_nodes(6,i) == 0) && (Source(1) ~= Totaal_nodes(1,i)) && (Totaal_nodes(4,i) > (11/(13*10.^1)))
            available(counter) = i;
            counter = counter + 1;
            
@@ -262,7 +278,7 @@ function available = Check_available_flood (Source, Totaal_nodes, R)
 end
 
 function Moved_Nodes = Move_nodes (Totaal_nodes, X_grens, Y_grens)
-
+    %rng(1904)
     for i = 1: length(Totaal_nodes)
         Totaal_nodes(2,i) = Totaal_nodes(2,i) + (-0.02*X_grens + 0.04 * X_grens * rand());
         while (Totaal_nodes(2,i) > X_grens) || (Totaal_nodes(2,i) < 0)
@@ -279,6 +295,7 @@ function Moved_Nodes = Move_nodes (Totaal_nodes, X_grens, Y_grens)
 end
 
 function Moved_Sink = Move_sink (sink, X_grens, Y_grens)
+    rng(1904)
     sink(2) = sink(2) + (-0.02*X_grens + 0.04 * X_grens * rand());
         while (sink(2) > X_grens) || (sink(2) < 0)
            sink(2) = sink(2) + (-0.02*X_grens + 0.04 * X_grens * rand());
@@ -293,21 +310,21 @@ function Moved_Sink = Move_sink (sink, X_grens, Y_grens)
 end
 
 function Send_Node = Send_Location( Node)
-    Needed_energy = 10/(13*10.^1);
+    Needed_energy = 10/(13*10.^3);
     Node(4) = Node(4) - Needed_energy;
     Send_Node = Node;
 
 end
 
 function Send_Node = Send_Hello( Node)
-    Needed_energy = 1/(13*10.^1);
+    Needed_energy = 1/(13*10.^3);
     Node(4) = Node(4) - Needed_energy;
     Send_Node = Node;
 
 end
 
 function Send_Node = Send_Data( Node)
-    Needed_energy = 60/(13*10.^1);
+    Needed_energy = 60/(13*10.^3);
     Node(4) = Node(4) - Needed_energy;
     Send_Node = Node;
 
@@ -328,7 +345,7 @@ function [Updated_nodes, Best] = Check_available_ddr (Source,Sink, Totaal_nodes,
     for i = 1 : length(Totaal_nodes)
         Distance = sqrt((source_X - Totaal_nodes(2,i))^2 + (source_Y - Totaal_nodes(3,i))^2);
         ATN = Find_angle(source_X, source_Y, Totaal_nodes(2,i), Totaal_nodes(3,i));
-        if (Distance <= R )  && (Totaal_nodes(5,i) == 0)&&(Source(1) ~= Totaal_nodes(1,i)) && (ATN< ATS + 0.5 * alfa ) && (ATN > ATS - 0.5* alfa) && (Totaal_nodes(4,i) >= 0.75*RE_avg)
+        if (Distance <= R )  && (Totaal_nodes(5,i) == 0)&&(Source(1) ~= Totaal_nodes(1,i)) && (ATN< ATS + 0.5 * alfa ) && (ATN > ATS - 0.5* alfa) && (Totaal_nodes(4,i) >= 0.75*RE_avg) && (Totaal_nodes(4,i) > (61/(13*10.^1)))
            available(counter) = i;
            
            DTS(counter) = sqrt((sink_X - Totaal_nodes(2,i))^2 + (sink_Y - Totaal_nodes(3,i))^2);
@@ -342,7 +359,7 @@ function [Updated_nodes, Best] = Check_available_ddr (Source,Sink, Totaal_nodes,
        for i = 1 : length(Totaal_nodes)
         Distance = sqrt((source_X - Totaal_nodes(2,i))^2 + (source_Y - Totaal_nodes(3,i))^2);
         ATN = Find_angle(source_X, source_Y, Totaal_nodes(2,i), Totaal_nodes(3,i));
-            if (Distance <= R )  && (Totaal_nodes(5,i) == 0)&&(Source(1) ~= Totaal_nodes(1,i)) && (ATN< ATS + 0.5 * alfa ) && (ATN > ATS - 0.5* alfa) 
+            if (Distance <= R )  && (Totaal_nodes(5,i) == 0)&&(Source(1) ~= Totaal_nodes(1,i)) && (ATN< ATS + 0.5 * alfa ) && (ATN > ATS - 0.5* alfa)  && (Totaal_nodes(4,i) > (61/(13*10.^1)))
                available(counter) = i;
 
                DTS(counter) = sqrt((sink_X - Totaal_nodes(2,i))^2 + (sink_Y - Totaal_nodes(3,i))^2);
